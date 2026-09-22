@@ -20,14 +20,40 @@ questions = QuestionSet(
             no = "It does not ask for immediate action",
         ),
     ),
+    "category" => Choice(
+        "Which category does this Julia question belong to?";
+        criteria = [
+            "language"    => "Syntax, semantics, types, standard library",
+            "packages"    => "Package management, registries, versions",
+            "performance" => "Benchmarks, allocations, profiling",
+        ],
+    ),
+    "difficulty" => Score(
+        "How difficult is this Julia question?";
+        criteria = ["Beginner", "Intermediate", "Advanced"],
+    ),
 )
 
-probability = with_client(
+result = with_client(
     model = PinnedModel("jev-1.13.0"),
     credential = EnvCredential("TYPESAFE_API_KEY"),
 ) do client
-    response = system_one(client; state = "Please resolve this today.", questions = questions)
-    answer(response, "urgent").noul
+    state = "How do I make a Julia function type-stable when benchmarking allocations with @allocated?"
+    response = system_one(client; state = state, questions = questions)
+
+    urgent = answer(response, "urgent")::NoulAnswer
+    category = answer(response, "category")::ChoiceAnswer
+    difficulty = answer(response, "difficulty")::ScoreAnswer
+
+    (
+        urgent = urgent.noul,
+        category = category.choice,
+        category_probabilities = category.probabilities,
+        category_confidence = category.confidence,
+        difficulty = difficulty.score,
+        difficulty_probabilities = difficulty.probabilities,
+        difficulty_confidence = difficulty.confidence,
+    )
 end
 ```
 
