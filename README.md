@@ -13,11 +13,11 @@ and response bodies, API keys, and question contents are not written to logs.
 using JevClient
 
 questions = QuestionSet(
-    "urgent" => Noul(
-        "Does this ticket request immediate action?";
+    "julia_related" => Noul(
+        "Is this question about Julia?";
         criteria = NoulCriteria(
-            yes = "It asks for immediate action",
-            no = "It does not ask for immediate action",
+            yes = "It concerns the Julia programming language",
+            no = "It does not concern the Julia programming language",
         ),
     ),
     "category" => Choice(
@@ -41,12 +41,12 @@ result = with_client(
     state = "How do I make a Julia function type-stable when benchmarking allocations with @allocated?"
     response = system_one(client; state = state, questions = questions)
 
-    urgent = answer(response, "urgent")::NoulAnswer
+    julia_related = answer(response, "julia_related")::NoulAnswer
     category = answer(response, "category")::ChoiceAnswer
     difficulty = answer(response, "difficulty")::ScoreAnswer
 
     (
-        urgent = urgent.noul,
+        julia_related = julia_related.noul,
         category = category.choice,
         category_probabilities = category.probabilities,
         category_confidence = category.confidence,
