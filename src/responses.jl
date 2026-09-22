@@ -1,15 +1,35 @@
 abstract type AbstractAnswer end
 
+"""
+    NoulAnswer
+
+Answer to a [`Noul`](@ref) question. The field `noul` is the probability in
+`[0, 1]` that the criteria hold.
+"""
 struct NoulAnswer <: AbstractAnswer
     noul::Float64
 end
 
+"""
+    ChoiceAnswer
+
+Answer to a [`Choice`](@ref) question. `choice` is the selected candidate ID,
+`probabilities` maps every candidate ID to its probability, and `confidence`
+describes the model's confidence in the selection.
+"""
 struct ChoiceAnswer <: AbstractAnswer
     choice::String
     probabilities::Vector{Pair{String,Float64}}
     confidence::Float64
 end
 
+"""
+    ScoreAnswer
+
+Answer to a [`Score`](@ref) question. `score` is the chosen level, `legend`
+lists the labels in ascending order, `probabilities` gives the probability of
+each level, and `confidence` describes the model's confidence.
+"""
 struct ScoreAnswer <: AbstractAnswer
     score::Float64
     legend::Vector{String}
@@ -17,11 +37,23 @@ struct ScoreAnswer <: AbstractAnswer
     confidence::Float64
 end
 
+"""
+    Usage
+
+Token accounting for a System One request: `input_tokens` and `output_tokens`.
+"""
 struct Usage
     input_tokens::Int
     output_tokens::Int
 end
 
+"""
+    SystemOneResponse
+
+Result of [`system_one`](@ref). Access answers by question ID with
+[`answer`](@ref) or `response[id]`. `model` is the resolved model ID, `usage`
+holds token counts, and `request_id` is the upstream request ID when present.
+"""
 struct SystemOneResponse
     model::String
     answers::Vector{Pair{String,AbstractAnswer}}
@@ -36,7 +68,20 @@ function Base.getindex(response::SystemOneResponse, id::AbstractString)
     throw(LocalValidationError("unknown answer ID"; field_path=[String(id)]))
 end
 
+"""
+    answer(response::SystemOneResponse, id::AbstractString)::AbstractAnswer
+
+Return the answer for the question `id`. Throws
+`JevClient.LocalValidationError` when the ID is unknown. Equivalent to
+`response[id]`.
+"""
 answer(response::SystemOneResponse, id::AbstractString) = response[id]
+
+"""
+    request_id(response::SystemOneResponse)::Union{Nothing,String}
+
+Return the upstream request ID carried by `response`, or `nothing` when absent.
+"""
 request_id(response::SystemOneResponse) = response.request_id
 
 function Base.show(io::IO, response::SystemOneResponse)

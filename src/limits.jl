@@ -10,6 +10,17 @@ struct ResourceLimits
     max_model_id_bytes::Int
 end
 
+"""
+    ResourceLimits(; max_request_bytes=1MiB, max_response_bytes=8MiB,
+                     max_error_body_bytes=64KiB, max_json_depth=32,
+                     max_string_bytes=1MiB, max_container_items=100_000,
+                     max_questions=1024, max_question_id_chars=128,
+                     max_model_id_bytes=128)
+
+Bounded-resource limits enforced locally before and after a request. All values
+must be positive. Limits are intentionally not relaxed per call; build a new
+`Client` if different limits are required.
+"""
 function ResourceLimits(; max_request_bytes::Integer=1 * 1024 * 1024,
                          max_response_bytes::Integer=8 * 1024 * 1024,
                          max_error_body_bytes::Integer=64 * 1024,
@@ -33,6 +44,13 @@ struct TimeoutPolicy
     total::Float64
 end
 
+"""
+    TimeoutPolicy(; connect=5.0, first_byte=15.0, attempt=30.0, total=60.0)
+
+Per-call timeouts in seconds. Values must be finite and positive and satisfy
+`connect <= attempt <= total` and `first_byte <= attempt`. A call may pass a
+narrower `TimeoutPolicy` to [`system_one`](@ref).
+"""
 function TimeoutPolicy(; connect::Real=5.0,
                        first_byte::Real=15.0,
                        attempt::Real=30.0,
@@ -54,6 +72,14 @@ struct RetryPolicy
     total_budget::Float64
 end
 
+"""
+    RetryPolicy(; max_retries=2, initial_delay=0.5, max_delay=15.0, total_budget=60.0)
+
+Retry settings for transient failures. `max_retries` must be between 0 and 5 and
+the delays and `total_budget` (seconds) must satisfy
+`initial_delay <= max_delay <= total_budget <= 300`. JevClient retries only HTTP
+429 and 529 responses.
+"""
 function RetryPolicy(; max_retries::Integer=2,
                      initial_delay::Real=0.5,
                      max_delay::Real=15.0,

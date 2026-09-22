@@ -1,0 +1,9 @@
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+JevClient = "aa809449-2690-4703-aa49-154247d721c5"
+
+[sources]
+JevClient = {path = "/Users/terasaki/work/atelierarith/JevClient.jl"}
+
+[compat]
+Documenter = "1"

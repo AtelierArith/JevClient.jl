@@ -300,6 +300,7 @@ export QuestionSet, Noul, NoulCriteria, Choice, Score
 export SystemOneResponse, NoulAnswer, ChoiceAnswer, ScoreAnswer, Usage
 export ModelInfo, ModelList
 export system_one, list_models, answer, request_id
+export with_client
 export RetryPolicy, TimeoutPolicy, ResourceLimits
 export JevError
 ```
@@ -337,6 +338,18 @@ Client(;
 - `Base.close(client)` と `Base.isopen(client)` を実装する。`close` / `isopen` を独自 export しない。
 - `close(client)` 後の呼び出しは `ClosedClientError`。
 - `finalizer` は補助として用いてよいが、利用者は明示的に `close` する。
+
+スコープ付き構築として `with_client` を提供する。
+
+```julia
+with_client(; kwargs...) do client
+    system_one(client; state, questions)
+end
+```
+
+- `with_client(f::Function; kwargs...)` は `Client(; kwargs...)` を構築し、`f(client)` の戻り値を返す。
+- `f` が正常終了しても例外を投げても、`finally` で `close(client)` を必ず呼ぶ。
+- keyword は `Client` の constructor へそのまま転送する。
 
 ### 6.3 資格情報
 

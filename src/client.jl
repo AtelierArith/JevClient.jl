@@ -16,6 +16,19 @@ end
 const _RATE_LIMIT_STATUS = 429
 const _OVERLOADED_STATUS = 529
 
+"""
+    Client(; model, credential=EnvCredential("TYPESAFE_API_KEY"),
+             retry=RetryPolicy(), timeout=TimeoutPolicy(), limits=ResourceLimits(),
+             max_inflight=8)
+
+Thread-safe client for the TypeSafe System One API. `model` is required and
+should normally be a versioned [`PinnedModel`](@ref).
+
+The client owns its credential provider, so `close(client)` closes that provider
+too. Call `close(client)` when finished, or use [`with_client`](@ref) to close it
+automatically. After `close(client)`, any request throws
+`JevClient.ClosedClientError`.
+"""
 function Client(; model::AbstractModelRef,
                 credential::AbstractCredentialProvider=EnvCredential("TYPESAFE_API_KEY"),
                 retry::RetryPolicy=RetryPolicy(),
@@ -101,6 +114,34 @@ function Base.close(client::Client)
     end
     close(client.credential)
     nothing
+end
+
+"""
+    with_client(f::Function; kwargs...)
+
+Build a [`Client`](@ref) from `kwargs`, pass it to `f`, and return `f(client)`.
+The client is always closed with `Base.close` in a `finally` block, including
+when `f` throws. Keyword arguments are forwarded to the `Client` constructor.
+
+This mirrors Python's `with` statement; `Base.close` is never exported.
+
+```julia
+probability = with_client(
+    model = PinnedModel("jev-1.13.0"),
+    credential = EnvCredential("TYPESAFE_API_KEY"),
+) do client
+    response = system_one(client; state, questions)
+    answer(response, "urgent").noul
+end
+```
+"""
+function with_client(f::Function; kwargs...)
+    client = Client(; kwargs...)
+    try
+        return f(client)
+    finally
+        close(client)
+    end
 end
 
 function _acquire_token(client::Client, deadline::Float64)
@@ -228,6 +269,15 @@ function _effective_policy(value, default, type)
     value
 end
 
+"""
+    system_one(client::Client; state, questions::QuestionSet,
+               timeout=nothing, retry=nothing)::SystemOneResponse
+
+Evaluate `questions` against `state` with the System One API and return a
+[`SystemOneResponse`](@ref). `timeout` and `retry` narrow the client-level
+policies for this call; they cannot relax the client's resource limits. Passing
+a non-`Client` or a closed client throws `JevClient.ClosedClientError`.
+"""
 function system_one(client::Client; state, questions::QuestionSet,
                     timeout::Union{Nothing,TimeoutPolicy}=nothing,
                     retry::Union{Nothing,RetryPolicy}=nothing)::SystemOneResponse
@@ -291,6 +341,12 @@ function _parse_model_list(bytes::Vector{UInt8}; limits::ResourceLimits=Resource
     ModelList(models)
 end
 
+"""
+    list_models(client::Client)::ModelList
+
+Return the models available to the client as a [`ModelList`](@ref). A closed
+client throws `JevClient.ClosedClientError`.
+"""
 function list_models(client::Client)
     _ensure_open(client)
     _enter_request(client)

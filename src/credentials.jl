@@ -23,6 +23,14 @@ function _credential_bytes(value)
     copy(trimmed)
 end
 
+"""
+    EnvCredential(name)
+
+Credential provider that reads the API key from the environment variable
+`name` at request time, so key rotation is picked up automatically. A missing,
+empty, or invalid value throws `JevClient.CredentialError`. The value is
+never logged and renders as `<redacted>`.
+"""
 mutable struct EnvCredential <: AbstractCredentialProvider
     name::String
     closed::Bool
@@ -36,6 +44,14 @@ function EnvCredential(name::AbstractString)
     EnvCredential(value, false)
 end
 
+"""
+    StaticCredential(secret)
+
+Credential provider that owns an in-memory copy of `secret`. `close` zeroes and
+empties the stored bytes on a best-effort basis. Prefer [`EnvCredential`](@ref)
+or [`CredentialCallback`](@ref) so the key is not held in process memory longer
+than necessary.
+"""
 mutable struct StaticCredential <: AbstractCredentialProvider
     bytes::Vector{UInt8}
     closed::Bool
@@ -45,6 +61,15 @@ function StaticCredential(secret::AbstractString)
     StaticCredential(_credential_bytes(secret), false)
 end
 
+"""
+    CredentialCallback(callback)
+
+Credential provider that calls `callback()` before each request. `callback` must
+return an `AbstractString`; any other return value or a thrown exception becomes
+a `JevClient.CredentialError` without exposing the secret. Use this to
+integrate an OS keychain or key-management service. The external store's
+lifetime is owned by the callback provider and is not closed by JevClient.
+"""
 mutable struct CredentialCallback{F} <: AbstractCredentialProvider
     callback::F
     closed::Bool
