@@ -384,19 +384,51 @@ function _validate_choice(value, question::Choice, path)
     ChoiceAnswer(choice, probabilities, confidence)
 end
 
+function _score_ordered(value, count::Int, path::Vector{String})
+    if value isa JSON3.Array
+        length(value) == count ||
+            throw(ResponseValidationError("score field length is invalid"; field_path=path))
+        return Any[value[index] for index in 1:count]
+    elseif value isa JSON3.Object
+        ordered = Vector{Any}(undef, count)
+        filled = falses(count)
+        for (key, item) in value
+            text = String(key)
+            index = try
+                parse(Int, text)
+            catch
+                throw(ResponseValidationError("score index is not an integer";
+                                              field_path=[path; text]))
+            end
+            text == string(index) ||
+                throw(ResponseValidationError("score index is not canonical";
+                                              field_path=[path; text]))
+            0 <= index <= count - 1 ||
+                throw(ResponseValidationError("score index is outside the level range";
+                                              field_path=[path; text]))
+            filled[index + 1] &&
+                throw(ResponseValidationError("duplicate score index"; field_path=[path; text]))
+            ordered[index + 1] = item
+            filled[index + 1] = true
+        end
+        all(filled) || throw(ResponseValidationError("score index is missing"; field_path=path))
+        return ordered
+    else
+        throw(ResponseValidationError("score field must be an array or object"; field_path=path))
+    end
+end
+
 function _validate_score(value, question::Score, path)
     score = _as_number(_field(value, "score", path), [path; "score"])
-    legend_value = _field(value, "legend", path)
-    legend_value isa JSON3.Array || throw(ResponseValidationError("legend must be an array";
-                                                                  field_path=[path; "legend"]))
+    count = length(question.criteria)
     legend = [_as_string(label, [path; "legend"; string(index)])
-              for (index, label) in enumerate(legend_value)]
-    probabilities_value = _field(value, "probabilities", path)
-    probabilities_value isa JSON3.Array || throw(ResponseValidationError("probabilities must be an array";
-                                                                         field_path=[path; "probabilities"]))
+              for (index, label) in enumerate(_score_ordered(_field(value, "legend", path),
+                                                             count, [path; "legend"]))]
     probabilities = Float64[_as_number(item, [path; "probabilities"; string(index)])
-                           for (index, item) in enumerate(probabilities_value)]
-    length(legend) == length(question.criteria) == length(probabilities) ||
+                           for (index, item) in enumerate(_score_ordered(
+                               _field(value, "probabilities", path), count,
+                               [path; "probabilities"]))]
+    length(legend) == count == length(probabilities) ||
         throw(ResponseValidationError("score legend/probabilities length is invalid"; field_path=path))
     legend == question.criteria || throw(ResponseValidationError("score legend does not match criteria";
                                                                  field_path=[path; "legend"]))

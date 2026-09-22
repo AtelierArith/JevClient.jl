@@ -24,6 +24,10 @@ const VALID_RESPONSE = """
 }
 """
 
+const OBJECT_SCORE_RESPONSE = replace(VALID_RESPONSE,
+    "\"legend\": [\"calm\", \"angry\"]" => "\"legend\": {\"0\": \"calm\", \"1\": \"angry\"}",
+    "\"probabilities\": [0.8, 0.2]" => "\"probabilities\": {\"0\": 0.8, \"1\": 0.2}")
+
 function test_questions()
     questions = QuestionSet(
         "urgent" => Noul("Is this urgent?"; criteria=NoulCriteria(yes="yes", no="no")),
@@ -81,6 +85,15 @@ end
         @test_throws JevClient.MalformedJSONError JevClient._parse_response(Vector{UInt8}(codeunits(duplicate)), questions)
         invalid_probability = replace(VALID_RESPONSE, "0.8, 0.2" => "0.9, 0.2")
         @test_throws JevClient.ResponseValidationError JevClient._parse_response(Vector{UInt8}(codeunits(invalid_probability)), questions)
+
+        object_response = JevClient._parse_response(Vector{UInt8}(codeunits(OBJECT_SCORE_RESPONSE)), questions)
+        @test answer(object_response, "mood").legend == ["calm", "angry"]
+        @test answer(object_response, "mood").probabilities == [0.8, 0.2]
+        @test answer(object_response, "mood").score == 0.2
+        missing_index = replace(OBJECT_SCORE_RESPONSE, "\"0\": 0.8, " => "")
+        @test_throws JevClient.ResponseValidationError JevClient._parse_response(Vector{UInt8}(codeunits(missing_index)), questions)
+        noncanonical_index = replace(OBJECT_SCORE_RESPONSE, "\"0\": \"calm\"" => "\"00\": \"calm\"")
+        @test_throws JevClient.ResponseValidationError JevClient._parse_response(Vector{UInt8}(codeunits(noncanonical_index)), questions)
     end
 
     @testset "mock transport, retry, and lifecycle" begin

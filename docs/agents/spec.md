@@ -177,8 +177,8 @@ System One の回答は次の形式に固定する。
     "frustration": {
       "type": "score",
       "score": 1.2,
-      "legend": ["Calm", "Frustrated", "Very angry"],
-      "probabilities": [0.1, 0.6, 0.3],
+      "legend": {"0": "Calm", "1": "Frustrated", "2": "Very angry"},
+      "probabilities": {"0": 0.1, "1": 0.6, "2": 0.3},
       "confidence": 0.6
     }
   },
@@ -920,6 +920,8 @@ end
 
 検証:
 
+- `legend` と `probabilities` は、配列か、0-origin の index を文字列キー `"0"`…`"n-1"` とする object のいずれか。上流は object を返す。
+- object の index は canonical な 10 進表記で、`0:(n-1)` を重複なく網羅。
 - level index が `0:(n-1)` に対応。
 - legend と probabilities の長さが送信 criteria と一致。
 - probability が finite かつ `[0,1]`。
