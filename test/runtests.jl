@@ -108,4 +108,28 @@ end
         @test !isopen(client)
         @test_throws JevClient.ClosedClientError system_one(client; state="hello", questions)
     end
+
+    @testset "with_client scopes lifecycle" begin
+        transport = JevClient.MockTransport(request ->
+            JevClient.TransportResponse(200, ["Content-Type" => "application/json", "x-request-id" => "ok-1"], Vector{UInt8}(codeunits(VALID_RESPONSE))))
+        seen = Ref{Client}()
+        result = with_client(model=PinnedModel("jev-1.13.0"), credential=StaticCredential("sentinel-key"),
+                             transport=transport) do client
+            seen[] = client
+            @test isopen(client)
+            system_one(client; state="hello", questions)
+        end
+        @test result isa SystemOneResponse
+        @test !isopen(seen[])
+        @test_throws JevClient.ClosedClientError system_one(seen[]; state="hello", questions)
+
+        error_client = Ref{Client}()
+        @test_throws ErrorException with_client(model=PinnedModel("jev-1.13.0"),
+                                                credential=StaticCredential("sentinel-key"),
+                                                transport=transport) do client
+            error_client[] = client
+            error("boom")
+        end
+        @test !isopen(error_client[])
+    end
 end

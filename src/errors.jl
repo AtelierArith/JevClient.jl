@@ -1,3 +1,11 @@
+"""
+    JevError
+
+Abstract supertype of every error thrown by JevClient. Catch `JevError` to
+handle client failures without exposing request bodies or credentials. Concrete
+subtypes include `JevClient.LocalValidationError`, `JevClient.CredentialError`,
+`JevClient.ClosedClientError`, `JevClient.TimeoutError`, and the API error types.
+"""
 abstract type JevError <: Exception end
 
 struct ErrorContext

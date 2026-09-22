@@ -1,5 +1,12 @@
 abstract type AbstractQuestion end
 
+"""
+    NoulCriteria(; yes=nothing, no=nothing)
+
+Criteria for a [`Noul`](@ref) question. At least one of `yes` or `no` must be
+given; each value is any JSON-serializable description of what satisfies that
+outcome.
+"""
 struct NoulCriteria
     yes::Any
     no::Any
@@ -13,6 +20,13 @@ function NoulCriteria(; yes=nothing, no=nothing)
     NoulCriteria(normalized_yes, normalized_no)
 end
 
+"""
+    Noul(instructions; criteria=nothing)
+
+Yes/no (noul) question. Returns a [`NoulAnswer`](@ref) whose `noul` field is a
+probability. `instructions` is any non-null JSON-serializable value and
+`criteria` is an optional [`NoulCriteria`](@ref).
+"""
 struct Noul <: AbstractQuestion
     instructions::Any
     criteria::Union{Nothing,NoulCriteria}
@@ -25,6 +39,15 @@ function Noul(instructions; criteria::Union{Nothing,NoulCriteria}=nothing)
     Noul(normalized, criteria)
 end
 
+"""
+    Choice(instructions; criteria)
+
+Multiple-choice question over 2 to 255 candidates. `criteria` is a collection of
+`ID => description` pairs, where each ID is a non-empty `AbstractString`.
+Returns a [`ChoiceAnswer`](@ref) with the selected ID and the full probability
+distribution. Treat the returned ID as untrusted and map it through an
+application-owned allowlist.
+"""
 struct Choice <: AbstractQuestion
     instructions::Any
     criteria::Vector{Pair{String,Any}}
@@ -65,6 +88,13 @@ function Choice(instructions; criteria)
     Choice(normalized_instructions, _choice_pairs(criteria))
 end
 
+"""
+    Score(instructions; criteria)
+
+Ordered score question with 2 to 10 labels, given as a vector of non-empty
+strings in ascending order. Returns a [`ScoreAnswer`](@ref) with the chosen
+level and its probability.
+"""
 struct Score <: AbstractQuestion
     instructions::Any
     criteria::Vector{String}
@@ -94,6 +124,13 @@ function _score_label(label)
     return value
 end
 
+"""
+    QuestionSet(items::Pair...)
+
+Ordered collection of `ID => question` pairs, where each question is a
+[`Noul`](@ref), [`Choice`](@ref), or [`Score`](@ref). IDs must be unique
+non-empty strings. Supports `length`, iteration, and `questions[id]`.
+"""
 struct QuestionSet
     questions::Vector{Pair{String,AbstractQuestion}}
 end
