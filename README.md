@@ -5,9 +5,7 @@
 
 Unofficial Julia client for TypeSafe AI.
 
-The client uses a versioned model by default in production examples and validates
-questions, request content, credentials, and model responses locally. Request
-and response bodies, API keys, and question contents are not written to logs.
+## Usage
 
 ```julia
 using JevClient
@@ -57,19 +55,14 @@ result = with_client(
 end
 ```
 
-`with_client` builds a `Client`, passes it to the block, and closes it in a
-`finally` block whether the block succeeds or throws, mirroring Python's
-`with` statement. If you need explicit ownership, build a `Client` and call
-`close(client)` yourself.
+`with_client` builds a `Client`, passes it to the block, and closes it in a `finally` clause whether the block succeeds or throws.
+If you need explicit ownership, build a `Client` and call `close(client)` yourself.
 
-Jev results are untrusted data. Map Choice values through an application-owned
-allowlist before taking an action, and do not use model output as shell, SQL,
-file paths, URLs, code, authorization decisions, or high-impact decisions.
+## Security and Privacy
 
-The regular API must not be assumed to provide zero data retention. Review
-TypeSafe's current privacy policy, DPA, and data residency terms before sending
-sensitive data. Minimize or pseudonymize state before transmission.
+Jev results are untrusted data.
+Before taking an action, map Choice values through an application-owned allowlist, and do not use model output for shell, SQL, file paths, URLs, code, authorization decisions, or high-impact decisions.
+Request and response bodies, API keys, and question contents are not written to logs.
 
-This package retries only HTTP 429 and 529 responses. Redirects, implicit proxy
-environment variables, arbitrary base URLs, and raw HTTP response escape hatches
-are intentionally not part of the stable 0.1 API.
+The regular API must not be assumed to provide zero data retention.
+Review TypeSafe's current privacy policy, DPA, and data residency terms before sending sensitive data, and minimize or pseudonymize state before transmission.
