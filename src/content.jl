@@ -8,11 +8,15 @@ function Base.getindex(object::OrderedObject, key::AbstractString)
     return first(filter(pair -> pair.first == key, object.pairs)).second
 end
 
-# JSON3 must never inspect OrderedObject's implementation field directly.  The
-# only values reaching this mapping have already passed _normalize_json.
-StructTypes.StructType(::Type{OrderedObject}) = StructTypes.CustomStruct()
-function StructTypes.lower(object::OrderedObject)
-    return Dict(pair.first => pair.second for pair in object.pairs)
+# JSON must never inspect OrderedObject's implementation field directly.  The
+# only values reaching this mapping have already passed _normalize_json.  The
+# lowered object preserves insertion order so wire key order is deterministic.
+function JSON.lower(object::OrderedObject)
+    lowered = JSON.Object{String,Any}()
+    for pair in object.pairs
+        lowered[pair.first] = pair.second
+    end
+    return lowered
 end
 
 function _invalid_text(s::AbstractString)
@@ -124,7 +128,7 @@ const _JSON_VALUE = Union{Nothing, Bool, Int64, Float64, String, Vector{Any}, Or
 function _json_bytes(value)
     value isa _JSON_VALUE ||
         throw(LocalValidationError("internal value is not JSON-normalized"))
-    Vector{UInt8}(codeunits(JSON3.write(value)))
+    Vector{UInt8}(codeunits(JSON.json(value)))
 end
 
 function _validate_normalized(value;

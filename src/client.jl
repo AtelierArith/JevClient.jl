@@ -318,14 +318,14 @@ end
 
 function _parse_model_list(bytes::Vector{UInt8}; limits::ResourceLimits=ResourceLimits())
     object = _parse_json(bytes; limits=limits)
-    object isa JSON3.Object || throw(ResponseValidationError("model list must be an object"))
+    object isa JSON.Object || throw(ResponseValidationError("model list must be an object"))
     models_value = _field(object, "models", String[])
-    models_value isa JSON3.Array || throw(ResponseValidationError("models must be an array";
+    models_value isa Vector{Any} || throw(ResponseValidationError("models must be an array";
                                                                  field_path=["models"]))
     models = Vector{ModelInfo}(undef, length(models_value))
     for (index, model) in enumerate(models_value)
         path = ["models", string(index)]
-        model isa JSON3.Object || throw(ResponseValidationError("model entry must be an object";
+        model isa JSON.Object || throw(ResponseValidationError("model entry must be an object";
                                                                 field_path=path))
         name = _as_string(_field(model, "name", path), [path; "name"])
         description = _as_string(_field(model, "description", path), [path; "description"]; nonempty=false)

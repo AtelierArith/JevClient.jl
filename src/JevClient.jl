@@ -1,10 +1,9 @@
 module JevClient
 
 using Dates
-using JSON3
+using JSON
 using Logging
 using Random
-using StructTypes
 
 include("errors.jl")
 include("limits.jl")
