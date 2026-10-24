@@ -1,3 +1,4 @@
+using Aqua
 using JevClient
 using Test
 
@@ -45,6 +46,10 @@ function test_questions()
 end
 
 @testset "JevClient" begin
+    @testset "Aqua" begin
+        Aqua.test_all(JevClient)
+    end
+
     questions = test_questions()
 
     @testset "content validation and serialization" begin
@@ -60,6 +65,35 @@ end
         cycle = Any[]
         push!(cycle, cycle)
         @test_throws JevClient.LocalValidationError JevClient._serialize_request(cycle, PinnedModel("jev-1.13.0"), questions)
+    end
+
+    @testset "wire key order and golden serialization" begin
+        ordered = QuestionSet(
+            "zeta" => Choice("Pick"; criteria=["z" => "last letter", "a" => nothing, "m" => (k=1, b=2.5)]),
+            "alpha" => Noul("Yes?"; criteria=NoulCriteria(no="no")),
+            "mid" => Score("Rate"; criteria=["low", "high"]),
+        )
+        request = String(JevClient._serialize_request(Dict("b" => true, "a" => [1, nothing]),
+                                                       PinnedModel("jev-1.13.0"), ordered))
+        @test request == "{\"state\":{\"a\":[1,null],\"b\":true},\"model\":\"jev-1.13.0\"," *
+            "\"questions\":{\"zeta\":{\"type\":\"choice\",\"instructions\":\"Pick\"," *
+            "\"criteria\":{\"z\":\"last letter\",\"a\":null,\"m\":{\"k\":1,\"b\":2.5}}}," *
+            "\"alpha\":{\"type\":\"noul\",\"instructions\":\"Yes?\",\"criteria\":{\"false\":\"no\"}}," *
+            "\"mid\":{\"type\":\"score\",\"instructions\":\"Rate\",\"criteria\":[\"low\",\"high\"]}}}"
+        escaped = String(JevClient._serialize_request("quote\" slash\\ é", PinnedModel("jev-1.13.0"), ordered))
+        @test startswith(escaped, "{\"state\":\"quote\\\" slash\\\\ é\",")
+    end
+
+    @testset "bounded JSON parser" begin
+        parsed = JevClient._parse_json(Vector{UInt8}(codeunits("{\"b\":[1,2.5,null],\"a\":\"\\u00e9\"}")))
+        @test collect(keys(parsed)) == ["b", "a"]
+        @test parsed["a"] == "é"
+        @test parsed["b"] isa Vector{Any}
+        @test_throws JevClient.MalformedJSONError JevClient._parse_json(Vector{UInt8}(codeunits("{\"a\":1,\"\\u0061\":2}")))
+        @test_throws JevClient.MalformedJSONError JevClient._parse_json(Vector{UInt8}(codeunits("{\"a\":NaN}")))
+        @test_throws JevClient.MalformedJSONError JevClient._parse_json(Vector{UInt8}(codeunits("{\"a\":1} x")))
+        deep = repeat("[", 40) * repeat("]", 40)
+        @test_throws JevClient.MalformedJSONError JevClient._parse_json(Vector{UInt8}(codeunits(deep)))
     end
 
     @testset "credentials and redaction" begin

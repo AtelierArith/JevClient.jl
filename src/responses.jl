@@ -124,7 +124,7 @@ function _scan_string!(scanner::_JSONScanner)
             scanner.pos += 1
             raw = String(scanner.bytes[start:scanner.pos - 1])
             decoded = try
-                JSON3.read(raw)
+                JSON.parse(raw)
             catch
                 _scan_error()
             end
@@ -285,7 +285,7 @@ function _parse_json(bytes::Vector{UInt8}; limits::ResourceLimits=ResourceLimits
     _scan_whitespace!(scanner)
     scanner.pos == length(bytes) + 1 || throw(MalformedJSONError("trailing JSON data"))
     try
-        JSON3.read(text)
+        JSON.parse(text)
     catch
         throw(MalformedJSONError("response contains malformed JSON"))
     end
@@ -296,7 +296,7 @@ function _has_field(object, key::String)
 end
 
 function _field(object, key::String, path::Vector{String})
-    object isa JSON3.Object || throw(ResponseValidationError("response field must be an object";
+    object isa JSON.Object || throw(ResponseValidationError("response field must be an object";
                                                             field_path=path))
     _has_field(object, key) || throw(ResponseValidationError("response field is missing"; field_path=[path; key]))
     object[key]
@@ -334,7 +334,7 @@ function _as_nonnegative_int(value, path::Vector{String})
 end
 
 function _object_pairs(object, path::Vector{String})
-    object isa JSON3.Object || throw(ResponseValidationError("response field must be an object"; field_path=path))
+    object isa JSON.Object || throw(ResponseValidationError("response field must be an object"; field_path=path))
     Pair{String,Any}[Pair{String,Any}(String(key), value) for (key, value) in object]
 end
 
@@ -385,11 +385,11 @@ function _validate_choice(value, question::Choice, path)
 end
 
 function _score_ordered(value, count::Int, path::Vector{String})
-    if value isa JSON3.Array
+    if value isa Vector{Any}
         length(value) == count ||
             throw(ResponseValidationError("score field length is invalid"; field_path=path))
         return Any[value[index] for index in 1:count]
-    elseif value isa JSON3.Object
+    elseif value isa JSON.Object
         ordered = Vector{Any}(undef, count)
         filled = falses(count)
         for (key, item) in value
@@ -451,16 +451,16 @@ function _parse_response(bytes::Vector{UInt8}, questions::QuestionSet;
                          limits::ResourceLimits=ResourceLimits(),
                          request_id::Union{Nothing,AbstractString}=nothing)
     object = _parse_json(bytes; limits=limits)
-    object isa JSON3.Object || throw(ResponseValidationError("response top-level must be an object"))
+    object isa JSON.Object || throw(ResponseValidationError("response top-level must be an object"))
     model = _as_string(_field(object, "model", String[]), ["model"])
     usage_value = _field(object, "usage", String[])
-    usage_value isa JSON3.Object || throw(ResponseValidationError("usage must be an object"; field_path=["usage"]))
+    usage_value isa JSON.Object || throw(ResponseValidationError("usage must be an object"; field_path=["usage"]))
     usage = Usage(_as_nonnegative_int(_field(usage_value, "input_tokens", ["usage"]),
                                       ["usage", "input_tokens"]),
                   _as_nonnegative_int(_field(usage_value, "output_tokens", ["usage"]),
                                       ["usage", "output_tokens"]))
     answers_value = _field(object, "answers", String[])
-    answers_value isa JSON3.Object || throw(ResponseValidationError("answers must be an object";
+    answers_value isa JSON.Object || throw(ResponseValidationError("answers must be an object";
                                                                    field_path=["answers"]))
     answer_pairs = _object_pairs(answers_value, ["answers"])
     expected_ids = Set(first.(questions.questions))

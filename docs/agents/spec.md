@@ -270,8 +270,7 @@ JevClient.jl は、OS 管理者権限、プロセスメモリダンプ、Julia �
 | パッケージ | 用途 |
 |---|---|
 | `HTTP.jl` 2.x | HTTPS クライアント、接続プール、ストリーム読み取り |
-| `JSON3.jl` | JSON の読み書き |
-| `StructTypes.jl` | 内部型の明示的な JSON マッピング |
+| `JSON.jl` 1.x | JSON の読み書き、内部型の明示的な JSON lowering(挿入順を保持) |
 
 標準ライブラリとして `Dates`、`Logging`、`Random`、`UUIDs` を用いてよい。
 
@@ -516,7 +515,7 @@ end
 
 ### 7.2 自動 struct シリアライズの禁止
 
-`StructTypes.jl` の登録済み型であっても、`state` に渡された任意 struct を自動的に展開してはならない。これは access token、password、内部 ID などの意図しない送信を防ぐためである。
+`JSON.lower` が定義された型であっても、`state` に渡された任意 struct を自動的に展開してはならない。これは access token、password、内部 ID などの意図しない送信を防ぐためである。
 
 将来 custom struct 対応を追加する場合、明示的な `JevClient.to_state(x)` メソッド実装を要求し、汎用 reflection を使わない。
 
@@ -1198,7 +1197,7 @@ sentinel secret を使い、次へ一切現れないことを機械的に確認�
 13. unknown answer type を skip しない。
 14. remote 422 body 内の sentinel secret を例外へ残さない。
 
-JSON3 の parser が duplicate key を検出できない場合、応答解析前に duplicate-key-aware scanner を追加するか、同じキーを後勝ちで受理しない parser 構成へ切り替える。これは response confusion を防ぐ必須要件とする。
+`JSON.jl` の parser は duplicate key を後勝ちで受理するため、応答解析前に duplicate-key-aware scanner で検査する。これは response confusion を防ぐ必須要件とする。
 
 ### 19.3 Property/fuzz tests
 
@@ -1517,8 +1516,8 @@ JSONValue = nothing | Bool | String | Int64 | Float64
 
 ### 28.4 duplicate key scanner の適用範囲
 
-duplicate-key 検査は response の JSON object 全てに再帰的に適用する。文字列中の文字、escaped key、Unicode key は JSON の decode 後に同一となるキーを重複として扱う。`JSON3.jl` がこの保証を提供しない場合は、JevClient.jl の bounded scanner で先に検査する。scanner は `max_response_bytes` と `max_json_depth` を共有し、上限超過時に response 全体を保持しない。
+duplicate-key 検査は response の JSON object 全てに再帰的に適用する。文字列中の文字、escaped key、Unicode key は JSON の decode 後に同一となるキーを重複として扱う。`JSON.jl` はこの保証を提供しないため、JevClient.jl の bounded scanner で先に検査する。scanner は `max_response_bytes` と `max_json_depth` を共有し、上限超過時に response 全体を保持しない。
 
 ### 28.5 依存関係と初期実装の境界
 
-`Project.toml` の直接依存は HTTP.jl、JSON3.jl、StructTypes.jl とし、互換バージョンを明記する。Phase 1 では transport を呼び出さず、質問型、許可 JSON 値の正規化、wire serialization、credential の local validation、response の bounded parser に必要な内部型を実装する。HTTP request、retry、concurrency は Phase 2 以降で、Phase 1 の public API を壊さず追加する。
+`Project.toml` の直接依存は HTTP.jl、JSON.jl とし、互換バージョンを明記する。Phase 1 では transport を呼び出さず、質問型、許可 JSON 値の正規化、wire serialization、credential の local validation、response の bounded parser に必要な内部型を実装する。HTTP request、retry、concurrency は Phase 2 以降で、Phase 1 の public API を壊さず追加する。
