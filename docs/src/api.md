@@ -34,6 +34,13 @@ Noul
 NoulCriteria
 Choice
 Score
+Box
+```
+
+## Images (experimental)
+
+```@docs
+Image
 ```
 
 ## Responses
@@ -43,6 +50,7 @@ SystemOneResponse
 NoulAnswer
 ChoiceAnswer
 ScoreAnswer
+BoxAnswer
 Usage
 answer
 request_id

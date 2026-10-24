@@ -32,6 +32,13 @@ function _question_wire(question::Score)
     ])
 end
 
+function _question_wire(question::Box)
+    OrderedObject(Pair{String,Any}[
+        Pair{String,Any}("type", "box"),
+        Pair{String,Any}("instructions", question.instructions),
+    ])
+end
+
 function _question_wire(question::AbstractQuestion)
     throw(LocalValidationError("unsupported question type"))
 end
@@ -74,12 +81,137 @@ function _request_value(state, model::AbstractModelRef, questions::QuestionSet;
     ])
 end
 
+struct _EncodedRequest
+    body::Vector{UInt8}
+    content_type::String
+    multimodal::Bool
+end
+
+struct _ImageRegistry
+    images::Vector{Image}
+    references::Vector{String}
+    uses::Vector{Int}
+    index::IdDict{Vector{UInt8},Int}
+end
+
+_ImageRegistry() = _ImageRegistry(Image[], String[], Int[], IdDict{Vector{UInt8},Int}())
+
+_random_token() = bytes2hex(rand(Random.RandomDevice(), UInt8, 16))
+
+function _collect_strings!(strings::Vector{String}, value)
+    if value isa String
+        push!(strings, value)
+    elseif value isa Vector{Any}
+        foreach(child -> _collect_strings!(strings, child), value)
+    elseif value isa OrderedObject
+        foreach(pair -> _collect_strings!(strings, pair.second), value.pairs)
+    end
+    strings
+end
+
+# References are substituted upstream inside any string, so a reference must not
+# occur in caller-supplied text.
+function _image_reference(strings::Vector{String})
+    for _ in 1:8
+        reference = "jevclient-image-" * _random_token()
+        any(text -> occursin(reference, text), strings) || return reference
+    end
+    throw(LocalValidationError("could not allocate an unused image reference"))
+end
+
+function _substitute_images(value, registry::_ImageRegistry, strings::Vector{String})
+    if value isa Image
+        index = get(registry.index, value.bytes, 0)
+        if index == 0
+            push!(registry.images, value)
+            push!(registry.references, _image_reference(strings))
+            push!(registry.uses, 0)
+            index = length(registry.images)
+            registry.index[value.bytes] = index
+        end
+        registry.uses[index] += 1
+        return registry.references[index]
+    elseif value isa Vector{Any}
+        return Any[_substitute_images(child, registry, strings) for child in value]
+    elseif value isa OrderedObject
+        return OrderedObject(Pair{String,Any}[
+            Pair{String,Any}(pair.first, _substitute_images(pair.second, registry, strings))
+            for pair in value.pairs])
+    end
+    value
+end
+
+_image_part_name(index::Int) = "image-" * string(index)
+
+function _assets_value(registry::_ImageRegistry)
+    OrderedObject(Pair{String,Any}[
+        Pair{String,Any}(registry.references[index], OrderedObject(Pair{String,Any}[
+            Pair{String,Any}("type", "image"),
+            Pair{String,Any}("part", _image_part_name(index)),
+            Pair{String,Any}("format", _image_extension(image)),
+        ])) for (index, image) in enumerate(registry.images)])
+end
+
+function _multipart_body(json::Vector{UInt8}, registry::_ImageRegistry)
+    parts = Tuple{String,Vector{UInt8}}[
+        ("Content-Disposition: form-data; name=\"request\"\r\n" *
+         "Content-Type: application/json\r\n", json)]
+    for (index, image) in enumerate(registry.images)
+        name = _image_part_name(index)
+        push!(parts, ("Content-Disposition: form-data; name=\"" * name * "\"; filename=\"" *
+                      name * "." * _image_extension(image) * "\"\r\n" *
+                      "Content-Type: " * _image_content_type(image) * "\r\n", image.bytes))
+    end
+    boundary = ""
+    for _ in 1:8
+        candidate = "jevclient-" * _random_token()
+        needle = Vector{UInt8}(codeunits(candidate))
+        if all(part -> isnothing(findfirst(needle, part[2])), parts)
+            boundary = candidate
+            break
+        end
+    end
+    isempty(boundary) && throw(LocalValidationError("could not allocate a multipart boundary"))
+    buffer = IOBuffer()
+    for (headers, data) in parts
+        write(buffer, "--", boundary, "\r\n", headers, "\r\n")
+        write(buffer, data)
+        write(buffer, "\r\n")
+    end
+    write(buffer, "--", boundary, "--\r\n")
+    take!(buffer), "multipart/form-data; boundary=" * boundary
+end
+
 function _serialize_request(state, model::AbstractModelRef, questions::QuestionSet;
                             limits::ResourceLimits=ResourceLimits())
     value = _request_value(state, model, questions; limits=limits)
+    strings = _collect_strings!(String[], value)
+    registry = _ImageRegistry()
+    value = _substitute_images(value, registry, strings)
+    multimodal = !isempty(registry.images) ||
+                 any(pair -> pair.second isa Box, questions.questions)
+    if !isempty(registry.images)
+        value = OrderedObject(Pair{String,Any}[value.pairs...,
+                                               Pair{String,Any}("assets", _assets_value(registry))])
+    end
     bytes = _json_bytes(value)
     length(bytes) <= limits.max_request_bytes ||
         throw(LocalValidationError("request exceeds configured byte limit";
                                    field_path=["request"]))
-    return bytes
+    isempty(registry.images) && return _EncodedRequest(bytes, "application/json; charset=utf-8", multimodal)
+
+    expanded = length(bytes)
+    for (image, uses) in zip(registry.images, registry.uses)
+        length(image.bytes) <= limits.max_image_bytes ||
+            throw(LocalValidationError("image exceeds configured byte limit"; field_path=["assets"]))
+        expanded += uses * length(image.bytes)
+    end
+    expanded <= limits.max_image_request_bytes ||
+        throw(LocalValidationError("expanded image request exceeds configured byte limit";
+                                   field_path=["assets"]))
+    body, content_type = _multipart_body(bytes, registry)
+    length(body) <= limits.max_image_request_bytes ||
+        throw(LocalValidationError("multipart request exceeds configured byte limit";
+                                   field_path=["request"]))
+    _EncodedRequest(body, content_type, multimodal)
 end

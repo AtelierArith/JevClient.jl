@@ -58,6 +58,31 @@ end
 `with_client` builds a `Client`, passes it to the block, and closes it in a `finally` clause whether the block succeeds or throws.
 If you need explicit ownership, build a `Client` and call `close(client)` yourself.
 
+## Images and Box questions (experimental)
+
+TypeSafe offers still PNG/JPEG image input (Jev 1.13+) and bounding-box `Box`
+questions (Jev 1.14+) as experimental "danger zone" features. Opt in per call
+with `danger_zone_images = true`; images are uploaded as multipart file parts.
+
+```julia
+photo = Image("door.jpg")  # PNG or JPEG, 280-1568 px per side, at most 16 MiB
+
+questions = QuestionSet(
+    "present" => Noul("Is there a door in `photo`?"),
+    "where" => Box("Locate the door in `photo`."),
+)
+
+with_client(model = PinnedModel("jev-1.14.0")) do client
+    response = system_one(client; state = (photo = photo,), questions = questions,
+                          danger_zone_images = true)
+    box = answer(response, "where")::BoxAnswer
+    (box.left, box.top, box.right, box.bottom, box.confidence)  # normalized to [0, 1]
+end
+```
+
+A `Box` answer always contains a box, so check presence with a `Noul` question.
+Multimodal accuracy is lower than text-only accuracy upstream.
+
 ## Security and Privacy
 
 Jev results are untrusted data.
