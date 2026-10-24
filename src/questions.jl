@@ -125,10 +125,33 @@ function _score_label(label)
 end
 
 """
+    Box(instructions::AbstractString)
+
+Experimental bounding-box question (Jev 1.14 or later). `instructions` is a
+non-empty string describing what to locate and in which image; it may refer to a
+state image by a backticked path such as `` `door` ``. Returns a
+[`BoxAnswer`](@ref). A box is always returned, so ask a [`Noul`](@ref) question
+first when the target may be absent. Requests containing a `Box` require
+`system_one(...; danger_zone_images=true)`.
+"""
+struct Box <: AbstractQuestion
+    instructions::String
+    function Box(instructions::AbstractString)
+        text = _check_string(instructions, ResourceLimits(); field="instructions")
+        isempty(strip(text)) &&
+            throw(LocalValidationError("Box instructions must not be empty"; field_path=["instructions"]))
+        new(text)
+    end
+end
+
+Box(instructions) =
+    throw(LocalValidationError("Box instructions must be a string"; field_path=["instructions"]))
+
+"""
     QuestionSet(items::Pair...)
 
 Ordered collection of `ID => question` pairs, where each question is a
-[`Noul`](@ref), [`Choice`](@ref), or [`Score`](@ref). IDs must be unique
+[`Noul`](@ref), [`Choice`](@ref), [`Score`](@ref), or [`Box`](@ref). IDs must be unique
 non-empty strings. Supports `length`, iteration, and `questions[id]`.
 """
 struct QuestionSet

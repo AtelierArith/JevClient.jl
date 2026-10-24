@@ -38,6 +38,22 @@ struct ScoreAnswer <: AbstractAnswer
 end
 
 """
+    BoxAnswer
+
+Answer to a [`Box`](@ref) question. `left`, `top`, `right`, and `bottom` are
+edges normalized to `[0, 1]` with the origin at the image's top-left corner
+(`left < right`, `top < bottom`); `left`/`right` are fractions of the width and
+`top`/`bottom` fractions of the height. `confidence` is in `[0, 1]`.
+"""
+struct BoxAnswer <: AbstractAnswer
+    left::Float64
+    top::Float64
+    right::Float64
+    bottom::Float64
+    confidence::Float64
+end
+
+"""
     Usage
 
 Token accounting for a System One request: `input_tokens` and `output_tokens`.
@@ -447,6 +463,26 @@ function _validate_score(value, question::Score, path)
     ScoreAnswer(score, legend, probabilities, confidence)
 end
 
+function _validate_box(value, path)
+    box_path = [path; "box"]
+    box = _field(value, "box", path)
+    edges = Dict{String,Float64}()
+    for edge in ("left", "top", "right", "bottom")
+        number = _as_number(_field(box, edge, box_path), [box_path; edge])
+        0.0 <= number <= 1.0 ||
+            throw(ResponseValidationError("box edge is outside [0, 1]"; field_path=[box_path; edge]))
+        edges[edge] = number
+    end
+    edges["left"] < edges["right"] ||
+        throw(ResponseValidationError("box left edge must be less than right edge"; field_path=box_path))
+    edges["top"] < edges["bottom"] ||
+        throw(ResponseValidationError("box top edge must be less than bottom edge"; field_path=box_path))
+    confidence = _as_number(_field(value, "confidence", path), [path; "confidence"])
+    0.0 <= confidence <= 1.0 || throw(ResponseValidationError("confidence is outside [0, 1]";
+                                                              field_path=[path; "confidence"]))
+    BoxAnswer(edges["left"], edges["top"], edges["right"], edges["bottom"], confidence)
+end
+
 function _parse_response(bytes::Vector{UInt8}, questions::QuestionSet;
                          limits::ResourceLimits=ResourceLimits(),
                          request_id::Union{Nothing,AbstractString}=nothing)
@@ -485,6 +521,10 @@ function _parse_response(bytes::Vector{UInt8}, questions::QuestionSet;
             answer_type == "score" || throw(ResponseValidationError("answer type does not match question";
                                                                      field_path=["answers"; pair.first; "type"]))
             _validate_score(value, question, ["answers"; pair.first])
+        elseif question isa Box
+            answer_type == "box" || throw(ResponseValidationError("answer type does not match question";
+                                                                   field_path=["answers"; pair.first; "type"]))
+            _validate_box(value, ["answers"; pair.first])
         else
             throw(ResponseValidationError("unknown question type"; field_path=["answers"; pair.first]))
         end

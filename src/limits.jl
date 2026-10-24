@@ -8,6 +8,8 @@ struct ResourceLimits
     max_questions::Int
     max_question_id_chars::Int
     max_model_id_bytes::Int
+    max_image_bytes::Int
+    max_image_request_bytes::Int
 end
 
 """
@@ -15,11 +17,15 @@ end
                      max_error_body_bytes=64KiB, max_json_depth=32,
                      max_string_bytes=1MiB, max_container_items=100_000,
                      max_questions=1024, max_question_id_chars=128,
-                     max_model_id_bytes=128)
+                     max_model_id_bytes=128, max_image_bytes=16MiB,
+                     max_image_request_bytes=32MiB)
 
 Bounded-resource limits enforced locally before and after a request. All values
-must be positive. Limits are intentionally not relaxed per call; build a new
-`Client` if different limits are required.
+must be positive. `max_request_bytes` applies to the JSON request document;
+`max_image_bytes` applies to each [`Image`](@ref), and `max_image_request_bytes`
+bounds both the whole multipart body and the expanded request size, where each
+use of an image reference counts the image once more. Limits are intentionally
+not relaxed per call; build a new `Client` if different limits are required.
 """
 function ResourceLimits(; max_request_bytes::Integer=1 * 1024 * 1024,
                          max_response_bytes::Integer=8 * 1024 * 1024,
@@ -29,10 +35,13 @@ function ResourceLimits(; max_request_bytes::Integer=1 * 1024 * 1024,
                          max_container_items::Integer=100_000,
                          max_questions::Integer=1024,
                          max_question_id_chars::Integer=128,
-                         max_model_id_bytes::Integer=128)
+                         max_model_id_bytes::Integer=128,
+                         max_image_bytes::Integer=16 * 1024 * 1024,
+                         max_image_request_bytes::Integer=32 * 1024 * 1024)
     values = (max_request_bytes, max_response_bytes, max_error_body_bytes,
               max_json_depth, max_string_bytes, max_container_items,
-              max_questions, max_question_id_chars, max_model_id_bytes)
+              max_questions, max_question_id_chars, max_model_id_bytes,
+              max_image_bytes, max_image_request_bytes)
     all(x -> x > 0, values) || throw(LocalValidationError("resource limits must be positive"))
     ResourceLimits(Int.(values)...)
 end

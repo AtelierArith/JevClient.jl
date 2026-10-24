@@ -197,6 +197,7 @@ System One の回答は次の形式に固定する。
 - System One API の同期呼び出し
 - モデル一覧取得
 - Noul、Choice、Score の型付き構築
+- 実験的な画像入力(PNG/JPEG の静止画)と Box 質問(29 章)
 - 型付き応答
 - ローカル検証
 - 安全な認証情報管理
@@ -213,7 +214,7 @@ System One の回答は次の形式に固定する。
 - 文章生成
 - Agent フレームワーク
 - ストリーミング応答
-- 画像、音声、動画、ファイルアップロード
+- 音声、動画、任意ファイルのアップロード(画像は 29 章の実験的機能に限る)
 - ブラウザ向け API キー保持
 - API キーの永続保存
 - 任意の `base_url` や TypeSafe 互換ゲートウェイ
@@ -295,8 +296,9 @@ JevClient.jl は、OS 管理者権限、プロセスメモリダンプ、Julia �
 export Client
 export EnvCredential, StaticCredential, CredentialCallback
 export PinnedModel, MovingAlias
-export QuestionSet, Noul, NoulCriteria, Choice, Score
-export SystemOneResponse, NoulAnswer, ChoiceAnswer, ScoreAnswer, Usage
+export QuestionSet, Noul, NoulCriteria, Choice, Score, Box
+export Image
+export SystemOneResponse, NoulAnswer, ChoiceAnswer, ScoreAnswer, BoxAnswer, Usage
 export ModelInfo, ModelList
 export system_one, list_models, answer, request_id
 export with_client
@@ -500,6 +502,9 @@ end
 - キーが `String` または `Symbol` の辞書
 - `Tuple`
 - `AbstractVector`
+- `JevClient.Image`(29 章。JSON には参照文字列として現れ、バイト列は multipart の file part でのみ送る)
+
+正規化後の配列は常に `Vector{Any}` とし、要素型から具象型配列を推論しない。
 
 以下は拒否する。
 
@@ -635,6 +640,8 @@ Accept-Encoding: identity
 User-Agent: JevClient.jl/<version> Julia/<version>
 ```
 
+画像を含む request は `Content-Type: multipart/form-data; boundary=<random>` を用いる。画像または Box 質問を含む request は、呼び出し側が `danger_zone_images=true` を明示した場合に限り `TypeSafe-Danger-Zone-Images: true` を追加する(29 章)。
+
 - `Authorization`、`Content-Type`、`Accept`、`Host` の上書きを許可しない。
 - cookie を送信・保存しない。
 - request body を圧縮しない。
@@ -682,10 +689,12 @@ ResourceLimits(
     max_questions           = 1024,
     max_question_id_chars   = 128,
     max_model_id_bytes      = 128,
+    max_image_bytes         = 16 * 1024 * 1024,
+    max_image_request_bytes = 32 * 1024 * 1024,
 )
 ```
 
-`max_request_bytes` は UTF-8 JSON にシリアライズした request 全体に適用し、`max_string_bytes` は各文字列の UTF-8 byte 数に適用し、`max_container_items` は各 object/array の要素数に適用する。`max_json_depth` は state、instructions、criteria、response の全てに適用する。これらをシリアライズ前にも検査し、巨大な入力を JSON 化してからしか拒否できない状態を作らない。
+`max_request_bytes` は UTF-8 JSON にシリアライズした request 文書全体に適用し、`max_image_bytes` は各画像に、`max_image_request_bytes` は multipart body 全体と、参照の出現回数分だけ画像を数えた展開後サイズの両方に適用し、`max_string_bytes` は各文字列の UTF-8 byte 数に適用し、`max_container_items` は各 object/array の要素数に適用する。`max_json_depth` は state、instructions、criteria、response の全てに適用する。これらをシリアライズ前にも検査し、巨大な入力を JSON 化してからしか拒否できない状態を作らない。
 
 ```julia
 TimeoutPolicy(
@@ -931,6 +940,24 @@ end
 
 上流の丸め方が変更され許容差が不足する場合、まず実測と公式仕様を確認し、黙って大きく緩めない。
 
+### 13.4.1 BoxAnswer
+
+```julia
+struct BoxAnswer <: AbstractAnswer
+    left::Float64
+    top::Float64
+    right::Float64
+    bottom::Float64
+    confidence::Float64
+end
+```
+
+検証:
+
+- `box` object に `left`、`top`、`right`、`bottom` が全て存在し、finite かつ `[0,1]`。
+- `left < right` かつ `top < bottom`。原点は画像左上。
+- confidence が finite かつ `[0,1]`。
+
 ### 13.5 raw response の禁止
 
 0.1 の `SystemOneResponse` は raw HTTP response/body を保持しない。forward compatibility を理由に raw body へアクセスする escape hatch も stable API には設けない。
@@ -1122,6 +1149,7 @@ src/
 
 責務:
 
+- `images.jl`: 実験的な画像型と PNG/JPEG header 検証
 - `content.jl`: 許可 JSON 値の正規化と循環・深度検査
 - `questions.jl`: 質問型と constructor validation
 - `serialization.jl`: wire JSON への唯一の変換経路
@@ -1521,3 +1549,39 @@ duplicate-key 検査は response の JSON object 全てに再帰的に適用す�
 ### 28.5 依存関係と初期実装の境界
 
 `Project.toml` の直接依存は HTTP.jl、JSON.jl とし、互換バージョンを明記する。Phase 1 では transport を呼び出さず、質問型、許可 JSON 値の正規化、wire serialization、credential の local validation、response の bounded parser に必要な内部型を実装する。HTTP request、retry、concurrency は Phase 2 以降で、Phase 1 の public API を壊さず追加する。
+
+## 29. 実験的マルチモーダル入力(画像と Box)
+
+上流は画像入力と Box 質問を `TypeSafe-Danger-Zone-Images: true` header の背後で実験的に提供している。画像は Jev 1.13 以降、Box は Jev 1.14 以降で利用できる。上流は multimodal の精度が text-only より低いと明記しているため、本機能は既定で無効とし、production-ready として案内しない。
+
+### 29.1 公開 API
+
+- `Image(path::AbstractString)` と `Image(bytes::AbstractVector{UInt8})`。バイト列は構築時にコピーし、`show` は形式・寸法・byte 数のみを表示する。
+- `Box(instructions::AbstractString)`。criteria を持たない。instructions は非空文字列で、`` `door` `` のように backtick で state の画像を参照してよい。
+- `BoxAnswer`(13.4.1)。
+- `system_one(...; danger_zone_images::Bool=false)`。request に `Image` または `Box` が含まれ、`danger_zone_images=false` の場合は通信前に `LocalValidationError` とする。text-only の request に header を暗黙に付与しない。
+
+### 29.2 画像のローカル検証
+
+- PNG または JPEG の静止画のみ。magic bytes と header(PNG の IHDR、JPEG の SOF)から寸法を読む。animated PNG(`acTL` chunk)は拒否する。
+- 1 画像あたり 16 MiB 以下。ファイルからの読み取りも上限 + 1 byte で打ち切る。
+- 幅と高さはそれぞれ 280〜1568 px。上流と同じくリサイズはしない。
+- 完全な画像デコードは行わず、破損画像の最終判定は上流の 400 に委ねる。
+
+### 29.3 wire 形式
+
+- `Image` は `state`、question `instructions`、`criteria` の JSON 値内の任意の位置に置ける。object key には置けない。Score の level は文字列のみのままとする。
+- serialization 時に各 `Image` を `jevclient-image-<128-bit random hex>` の参照文字列へ置換し、top-level `assets` に `{"type": "image", "part": "image-<n>", "format": "png" | "jpg"}` を追加する。同じ `Image` オブジェクトは 1 asset にまとめ、出現ごとに参照を繰り返す。
+- 上流は文字列中の参照も置換するため、参照文字列が利用者の文字列中に現れないことを確認し、衝突時は再生成する。
+- request は multipart/form-data とし、最初の part を `name="request"`(`application/json`)、各画像を `name="image-<n>"`、`filename="image-<n>.<ext>"`、`image/png` または `image/jpeg` の file part とする。boundary は random で、いずれの part にも現れないことを確認する。base64 は用いない。
+- 画像を含まず Box のみを含む request は従来どおり JSON body で送る。
+- JSON 文書は `max_request_bytes`、各画像は `max_image_bytes`、multipart body と展開後サイズは `max_image_request_bytes` で制限する。
+- 固定 endpoint、redirect 拒否、credential redaction、body のゼロ化、応答検証の保証は維持する。
+
+### 29.4 テスト
+
+- PNG/JPEG の寸法解析、寸法・形式・animated PNG・欠損ファイルの拒否。
+- multipart の part 構成、content type、参照置換、asset の重複排除、各種 byte 上限。
+- opt-in なしの request が transport を呼ばないこと、opt-in 時のみ header が付与されること。
+- BoxAnswer の範囲・順序・欠落・type 不一致の拒否。
+

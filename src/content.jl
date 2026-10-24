@@ -67,6 +67,8 @@ function _normalize_json(value;
         catch
             throw(LocalValidationError("integer is outside the supported range"; field_path=path))
         end
+    elseif value isa Image
+        return value
     elseif value isa AbstractFloat
         number = Float64(value)
         isfinite(number) || throw(LocalValidationError("non-finite floating point value"; field_path=path))
@@ -107,7 +109,7 @@ function _normalize_json(value;
         length(value) <= limits.max_container_items ||
             throw(LocalValidationError("array exceeds maximum item count"; field_path=path))
         active[value] = nothing
-        items = [_normalize_json(child;
+        items = Any[_normalize_json(child;
             limits=limits, depth=depth + 1, path=[path; string(index)], active=active)
                  for (index, child) in pairs(value)]
         delete!(active, value)
@@ -115,7 +117,7 @@ function _normalize_json(value;
     elseif value isa Tuple
         length(value) <= limits.max_container_items ||
             throw(LocalValidationError("array exceeds maximum item count"; field_path=path))
-        return [_normalize_json(child;
+        return Any[_normalize_json(child;
             limits=limits, depth=depth + 1, path=[path; string(index)], active=active)
                 for (index, child) in pairs(value)]
     else

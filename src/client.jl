@@ -217,7 +217,9 @@ function _retry_delay(policy::RetryPolicy, attempt::Int, retry_after, deadline::
 end
 
 function _perform_request(client::Client, method::String, path::String,
-                          body::Vector{UInt8}, timeout::TimeoutPolicy, retry::RetryPolicy)
+                          body::Vector{UInt8}, timeout::TimeoutPolicy, retry::RetryPolicy;
+                          content_type::String="application/json; charset=utf-8",
+                          danger_zone_images::Bool=false)
     deadline = time() + min(timeout.total, retry.total_budget)
     attempt = 0
     while attempt <= retry.max_retries + 1
@@ -230,11 +232,12 @@ function _perform_request(client::Client, method::String, path::String,
             credential_bytes = _credential(client.credential)
             headers = Pair{String,String}[
                 "Authorization" => "Bearer " * String(credential_bytes),
-                "Content-Type" => "application/json; charset=utf-8",
+                "Content-Type" => content_type,
                 "Accept" => "application/json",
                 "Accept-Encoding" => "identity",
                 "User-Agent" => "JevClient.jl/0.1.0 Julia/" * string(VERSION),
             ]
+            danger_zone_images && push!(headers, "TypeSafe-Danger-Zone-Images" => "true")
             response = _transport_request(client.transport, method, path, headers,
                                           attempt_body, deadline;
                                           limits=client.limits, timeout=timeout)
@@ -271,16 +274,25 @@ end
 
 """
     system_one(client::Client; state, questions::QuestionSet,
-               timeout=nothing, retry=nothing)::SystemOneResponse
+               timeout=nothing, retry=nothing,
+               danger_zone_images=false)::SystemOneResponse
 
 Evaluate `questions` against `state` with the System One API and return a
 [`SystemOneResponse`](@ref). `timeout` and `retry` narrow the client-level
 policies for this call; they cannot relax the client's resource limits. Passing
 a non-`Client` or a closed client throws `JevClient.ClosedClientError`.
+
+Requests that contain an [`Image`](@ref) or a [`Box`](@ref) question are
+experimental upstream and must opt in with `danger_zone_images=true`, which
+sends the `TypeSafe-Danger-Zone-Images: true` header; otherwise they throw
+`JevClient.LocalValidationError` before any network access. Images are uploaded
+as multipart file parts. Multimodal accuracy is lower than text-only accuracy,
+so do not rely on it for production decisions without independent checks.
 """
 function system_one(client::Client; state, questions::QuestionSet,
                     timeout::Union{Nothing,TimeoutPolicy}=nothing,
-                    retry::Union{Nothing,RetryPolicy}=nothing)::SystemOneResponse
+                    retry::Union{Nothing,RetryPolicy}=nothing,
+                    danger_zone_images::Bool=false)::SystemOneResponse
     _ensure_open(client)
     _enter_request(client)
     token_acquired = false
@@ -304,15 +316,37 @@ function system_one(client::Client; state, questions::QuestionSet,
         deadline = time() + effective_timeout.total
         _acquire_token(client, deadline)
         token_acquired = true
-        body = _serialize_request(state, client.model, questions; limits=client.limits)
-        response = _perform_request(client, "POST", "/v1/systemone", body,
-                                    effective_timeout, effective_retry)
+        request = _serialize_request(state, client.model, questions; limits=client.limits)
+        request.multimodal && !danger_zone_images &&
+            throw(LocalValidationError("images and Box questions require danger_zone_images=true";
+                                       field_path=["request"]))
+        response = _perform_request(client, "POST", "/v1/systemone", request.body,
+                                    effective_timeout, effective_retry;
+                                    content_type=request.content_type,
+                                    danger_zone_images=danger_zone_images)
         _check_json_content_type(response.headers)
         _parse_response(response.body, questions; limits=client.limits,
                         request_id=_header_value(response.headers, "x-request-id"))
     finally
         token_acquired && _release_token(client)
         _leave_request(client)
+    end
+end
+
+const _RFC3339_TIME = r"^T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+
+# Upstream returns either an ISO date or an RFC 3339 timestamp; keep the
+# calendar date as written.
+function _release_date(text::String, path::Vector{String})
+    invalid() = throw(ResponseValidationError("release_date is not an ISO date or timestamp";
+                                              field_path=path))
+    isascii(text) && ncodeunits(text) >= 10 || invalid()
+    rest = text[11:end]
+    isempty(rest) || occursin(_RFC3339_TIME, rest) || invalid()
+    try
+        Date(text[1:10], dateformat"yyyy-mm-dd")
+    catch
+        invalid()
     end
 end
 
@@ -330,12 +364,7 @@ function _parse_model_list(bytes::Vector{UInt8}; limits::ResourceLimits=Resource
         name = _as_string(_field(model, "name", path), [path; "name"])
         description = _as_string(_field(model, "description", path), [path; "description"]; nonempty=false)
         release = _as_string(_field(model, "release_date", path), [path; "release_date"])
-        date = try
-            Date(release)
-        catch
-            throw(ResponseValidationError("release_date is not an ISO date";
-                                          field_path=[path; "release_date"]))
-        end
+        date = _release_date(release, [path; "release_date"])
         models[index] = ModelInfo(name, description, date)
     end
     ModelList(models)
@@ -354,6 +383,7 @@ function list_models(client::Client)
     try
         deadline = time() + client.timeout.total
         _acquire_token(client, deadline)
+        token_acquired = true
         response = _perform_request(client, "GET", "/v1/models", UInt8[],
                                     client.timeout, client.retry)
         _check_json_content_type(response.headers)
