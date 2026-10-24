@@ -1,3 +1,4 @@
+using Aqua
 using JevClient
 using Test
 
@@ -45,6 +46,10 @@ function test_questions()
 end
 
 @testset "JevClient" begin
+    @testset "Aqua" begin
+        Aqua.test_all(JevClient)
+    end
+
     questions = test_questions()
 
     @testset "content validation and serialization" begin
